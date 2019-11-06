@@ -25,42 +25,70 @@ def init(opts):
     TARGET_DEVICE['CONFIG']['TARGET'] = conn_info.get('target')
     TARGET_DEVICE['CONFIG']['VERSION'] = conn_info.get('version') or 2
     TARGET_DEVICE['CONFIG']['PORT'] = conn_info.get('port') or ('UDP', 161)
-    TARGET_DEVICE['CONFIG']['SNMP_USER'] = conn_info.get('username') or None
-    TARGET_DEVICE['CONFIG']['SNMP_PASSWORD'] = conn_info.get('password') or None
+    TARGET_DEVICE['CONFIG']['AUTH_USER'] = conn_info.get('auth_user') or None
+    TARGET_DEVICE['CONFIG']['AUTH_KEY'] = conn_info.get('auth_key') or None
+    TARGET_DEVICE['CONFIG']['PRIV_KEY'] = conn_info.get('priv_key') or None
     TARGET_DEVICE['CONFIG']['AUTH_TYPE'] = conn_info.get('auth_type') or None
-    TARGET_DEVICE['CONFIG']['AUTH_PROTOCOL'] = conn_info.get('auth_protocol') or None
+    TARGET_DEVICE['CONFIG']['PRIV_TYPE'] = conn_info.get('priv_type') or None
     TARGET_DEVICE['CONFIG']['COMMUNITY'] = conn_info.get('community') or 'public'
     TARGET_DEVICE['CONFIG']['WRITE_ACCESS'] = conn_info.get('write_access') or False
     TARGET_DEVICE['CONFIG']['CONTEXT'] = conn_info.get('context') or None
 
-    TARGET_DEVICE['OPER'] = {}
-    TARGET_DEVICE['OPER']['UP'] = False
-
+    # Runtime dictionary defines the SNMP Engine context data
     TARGET_DEVICE['RUNTIME'] = {}
     TARGET_DEVICE['RUNTIME']['snmpEngine'] = SnmpEngine()
     TARGET_DEVICE['RUNTIME']['transportTarget'] = udpTransportTarget((TARGET_DEVICE['CONFIG']['TARGET'], TARGET_DEVICE['CONFIG']['PORT'][1]))
-    TARGET_DEVICE['RUNTIME']['contextData'] = ContextData()
+
+    if TARGET_DEVICE['CONFIG']['CONTEXT']:
+        TARGET_DEVICE['RUNTIME']['contextData'] = ContextData(contextName=TARGET_DEVICE['CONFIG']['CONTEXT'])
+    else:
+        TARGET_DEVICE['RUNTIME']['contextData'] = ContextData()
 
     if TARGET_DEVICE['CONFIG']['VERSION'] == 3:
-        TARGET_DEVICE['CREDENTIALS'] = UsmUserData()
+
+        AUTH_TYPE = usmNoAuthProtocol
+        if TARGET_DEVICE['CONFIG']['AUTH_TYPE'] == 'md5':
+            AUTH_TYPE = usmHMACMD5AuthProtocol 
+        elif TARGET_DEVICE['CONFIG']['AUTH_TYPE'] == 'sha':
+            AUTH_TYPE = usmHMACSHAAuthProtocol
+        elif TARGET_DEVICE['CONFIG']['AUTH_TYPE'] == 'sha-128':
+            AUTH_TYPE = usmHMAC128SHA224AuthProtocol
+        elif TARGET_DEVICE['CONFIG']['AUTH_TYPE'] == 'sha-192':
+            AUTH_TYPE = usmHMAC192SHA256AuthProtocol
+        elif TARGET_DEVICE['CONFIG']['AUTH_TYPE'] == 'sha-256':
+            AUTH_TYPE = usmHMAC256SHA384AuthProtocol
+
+        PRIV_TYPE = usmNoPrivProtocol
+        if TARGET_DEVICE['CONFIG']['PRIV_TYPE'] == 'des':
+            PRIV_TYPE = usmDESPrivProtocol 
+        elif TARGET_DEVICE['CONFIG']['PRIV_TYPE'] == '3des':
+            PRIV_TYPE = usm3DESEDEPrivProtocol
+        elif TARGET_DEVICE['CONFIG']['PRIV_TYPE'] == 'aes-128':
+            PRIV_TYPE = usmAesCfb128Protocol
+        elif TARGET_DEVICE['CONFIG']['PRIV_TYPE'] == 'aes-192':
+            PRIV_TYPE = usmAesCfb192Protocol
+        elif TARGET_DEVICE['CONFIG']['PRIV_TYPE'] == 'aes-256':
+            PRIV_TYPE = usmAesCfb256Protocol
 
 
+        TARGET_DEVICE['CREDENTIALS'] = UsmUserData(
+            userName=TARGET_DEVICE['CONFIG']['AUTH_USER'],
+            authKey=TARGET_DEVICE['CONFIG']['AUTH_KEY'],
+            privKey=TARGET_DEVICE['CONFIG']['PRIV_KEY'],
+            authProtocol=AUTH_TYPE,
+            privProtocol=PRIV_TYPE,
+            )
 
     else:
         if TARGET_DEVICE['CONFIG']['COMMUNITY']:
             if TARGET_DEVICE['CONFIG']['VERSION'] == 1:
                 mpModel = 0
-                TARGET_DEVICE['OPER']['INTERFACE'] = SnmpV1Caller()
             elif TARGET_DEVICE['CONFIG']['VERSION'] == 2:
                 mpModel = 1
-                TARGET_DEVICE['OPER']['INTERFACE'] = SnmpV2Caller()
             else:
                 pass # TODO: Raise an error
-            TARGET_DEVICE['OPER']['COMMUNITY_DATA'] = CommunityData(TARGET_DEVICE['CONFIG']['COMMUNITY'], mpModel=mpModel)
 
-
-    # Attempt to connect to the SNMP target
-    ENGINE = SnmpEngine()
+            TARGET_DEVICE['CREDENTIALS'] = CommunityData(TARGET_DEVICE['CONFIG']['COMMUNITY'], mpModel=mpModel)
 
 
 def initialized():
@@ -82,15 +110,37 @@ def grains():
 Callable functions
 '''
 
-def get_cmd():
-    CONTEXT = {'snmpEngine': ENGINE, 'authData': None, 'transportTarget': updTransportTarget
+def call(object_list: list, method: str = 'get') -> list:
+    objects = object_list
 
-def set_cmd():
-    pass
+    if method == 'get' or method == 'GET':
+        iter = setCmd(TARGET_DEVICE['RUNTIME'])
+    elif method == 'set' or method == 'SET':
+        iter = getCmd(TARGET_DEVICE['RUNTIME'])
+    elif method == 'next' or method == 'NEXT':
+        iter = nextCmd(ATRGET_DEVICE['RUNTIME'])
+    elif method == 'bulk' or method == 'BULK':
+        iter = buldCmd(TARGET_DEVICE['RUNTIME'])
+    else
 
-def get_bulk_cmd():
-    pass
+    next(iter)
 
-def get_next_cmd():
-    pass
+    return_values = {}
 
+    while objects:
+        errorIndication, errorStatus, errorIndex, varBinds = iter.send(objects.pop())
+        if errorIndication:
+            logger.info(objects)
+            return_values['error'] = str(errorIndication) + ' at ' + str(errorIndex)
+        elif errorStatus:
+            logger.info(objects)
+            return_values['error'] = errorStatus.prettyPrint()
+        else:
+            for varBind in varBinds:
+                ret_val = varBind[1]
+                if isinstance(varBind[1], rfc1902.Gauge32):
+                    ret_val = int(varBind[1])
+
+                return_values[varBind[0].prettyPrint()] =ret_val
+
+    return return_values
