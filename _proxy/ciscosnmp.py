@@ -37,7 +37,7 @@ def init(opts):
     # Runtime dictionary defines the SNMP Engine context data
     TARGET_DEVICE['RUNTIME'] = {}
     TARGET_DEVICE['RUNTIME']['snmpEngine'] = SnmpEngine()
-    TARGET_DEVICE['RUNTIME']['transportTarget'] = udpTransportTarget((TARGET_DEVICE['CONFIG']['TARGET'], TARGET_DEVICE['CONFIG']['PORT'][1]))
+    TARGET_DEVICE['RUNTIME']['transportTarget'] = UdpTransportTarget((TARGET_DEVICE['CONFIG']['TARGET'], TARGET_DEVICE['CONFIG']['PORT'][1]))
 
     if TARGET_DEVICE['CONFIG']['CONTEXT']:
         TARGET_DEVICE['RUNTIME']['contextData'] = ContextData(contextName=TARGET_DEVICE['CONFIG']['CONTEXT'])
@@ -71,7 +71,7 @@ def init(opts):
             PRIV_TYPE = usmAesCfb256Protocol
 
 
-        TARGET_DEVICE['CREDENTIALS'] = UsmUserData(
+        TARGET_DEVICE['RUNTIME']['authData'] = UsmUserData(
             userName=TARGET_DEVICE['CONFIG']['AUTH_USER'],
             authKey=TARGET_DEVICE['CONFIG']['AUTH_KEY'],
             privKey=TARGET_DEVICE['CONFIG']['PRIV_KEY'],
@@ -88,8 +88,10 @@ def init(opts):
             else:
                 pass # TODO: Raise an error
 
-            TARGET_DEVICE['CREDENTIALS'] = CommunityData(TARGET_DEVICE['CONFIG']['COMMUNITY'], mpModel=mpModel)
+            TARGET_DEVICE['RUNTIME']['authData'] = CommunityData(TARGET_DEVICE['CONFIG']['COMMUNITY'], mpModel=mpModel)
 
+    status = call(['1.3.6.1.2.1.1.5'])
+    
 
 def initialized():
     pass
@@ -114,14 +116,15 @@ def call(object_list: list, method: str = 'get') -> list:
     objects = object_list
 
     if method == 'get' or method == 'GET':
-        iter = setCmd(TARGET_DEVICE['RUNTIME'])
+        iter = setCmd(**TARGET_DEVICE['RUNTIME'])
     elif method == 'set' or method == 'SET':
-        iter = getCmd(TARGET_DEVICE['RUNTIME'])
+        iter = getCmd(**TARGET_DEVICE['RUNTIME'])
     elif method == 'next' or method == 'NEXT':
-        iter = nextCmd(ATRGET_DEVICE['RUNTIME'])
+        iter = nextCmd(**TARGET_DEVICE['RUNTIME'])
     elif method == 'bulk' or method == 'BULK':
-        iter = buldCmd(TARGET_DEVICE['RUNTIME'])
-    else
+        iter = bulKCmd(**TARGET_DEVICE['RUNTIME'])
+    else:
+        raise
 
     next(iter)
 
